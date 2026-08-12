@@ -242,27 +242,29 @@ class TextGenerator(Protocol):
     def generate(self, prompt: str) -> str: ...
 
 
-class OpenAIGenerator:
+class GroqGenerator:
+    """Calls a Groq-hosted model through Groq's OpenAI-compatible endpoint."""
+
     def __init__(self, max_output_tokens: int = 300) -> None:
-        api_key = os.getenv("OPENAI_API_KEY", "").strip()
-        self.model = os.getenv("OPENAI_MODEL", "").strip()
+        api_key = os.getenv("GROQ_API_KEY", "").strip()
+        self.model = os.getenv("GROQ_MODEL", "").strip()
         if not api_key:
-            raise RuntimeError("OPENAI_API_KEY is missing from .env")
+            raise RuntimeError("GROQ_API_KEY is missing from .env")
         if not self.model:
-            raise RuntimeError("OPENAI_MODEL is missing from .env")
-        self.client = OpenAI(api_key=api_key)
+            raise RuntimeError("GROQ_MODEL is missing from .env")
+        self.client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
         self.max_output_tokens = max_output_tokens
 
     def generate(self, prompt: str) -> str:
-        response = self.client.responses.create(
+        response = self.client.chat.completions.create(
             model=self.model,
-            input=prompt,
+            messages=[{"role": "user", "content": prompt}],
             temperature=0,
-            max_output_tokens=self.max_output_tokens,
+            max_tokens=self.max_output_tokens,
         )
-        answer = response.output_text.strip()
+        answer = (response.choices[0].message.content or "").strip()
         if not answer:
-            raise RuntimeError("OpenAI returned an empty answer")
+            raise RuntimeError("Groq returned an empty answer")
         return answer
 
 
@@ -299,7 +301,7 @@ class DomainAssistant:
         return cls(
             corpus_id,
             BM25Retriever(chunks),
-            generator if generator is not None else OpenAIGenerator(),
+            generator if generator is not None else GroqGenerator(),
             top_k,
         )
 
