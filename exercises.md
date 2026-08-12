@@ -148,31 +148,31 @@ và quyết định thiết kế, không chép lại toàn bộ QA.
 
 | Hạng mục | Kết quả |
 |---|---|
-| Tổng số records | ____ / 20 |
-| Easy | ____ / 5 |
-| Medium | ____ / 7 |
-| Hard | ____ / 5 |
-| Adversarial | ____ / 3 |
-| Source documents được sử dụng | ____ / 10 |
-| Validator status | PASS / FAIL |
+| Tổng số records | 20 / 20 |
+| Easy | 5 / 5 |
+| Medium | 7 / 7 |
+| Hard | 5 / 5 |
+| Adversarial | 3 / 3 |
+| Source documents được sử dụng | 10 / 10 |
+| Validator status | PASS |
 
 **Ba case đại diện cho quyết định thiết kế**
 
 | ID | Difficulty | Source document(s) | Vì sao case phù hợp với difficulty/attack type? |
 |---|---|---|---|
-| | | | |
-| | | | |
-| | | | |
+| E03 | Easy | `06_warranty_policy.md` | Trả lời trực tiếp từ một câu duy nhất trong một document, không cần suy luận nhiều bước — đúng chất "factual lookup" của Easy. |
+| H05 | Hard | `01_product_catalog.md`, `06_warranty_policy.md` | Corpus có sẵn một ví dụ "HomeHub radio stops connecting to supported devices" được liệt kê là **được** bảo hành, dễ khiến RAG retrieve nhầm và trả lời sai nếu không phân biệt được thiết bị third-party chưa certified với thiết bị supported — đúng chất Hard: ambiguity có thật trong corpus, không chỉ câu hỏi dài. |
+| A03 | Adversarial (`false_premise_or_ambiguous_trap`) | `00_system_scope.md`, `06_warranty_policy.md` | Câu hỏi cài sẵn premise sai (bảo hành 36 tháng thay vì 24 tháng thật); assistant phải tự nhận diện và đính chính thay vì xác nhận theo giả định của người dùng — đúng attack_type false-premise. |
 
 **Điểm khó nhất khi xây dựng expected answer hoặc evidence là gì?**
 
-> *Câu trả lời:*
+> Khó nhất là chọn evidence "vừa đủ": phải đủ ngắn (không paste nguyên đoạn dài) nhưng vẫn chứa đủ số liệu/điều kiện để expected_answer có căn cứ đầy đủ, đồng thời phải là substring nguyên văn tuyệt đối (không được sửa dù chỉ một dấu câu hay khoảng trắng) — nhiều lần phải quay lại đọc đúng nguyên văn document thay vì diễn giải theo trí nhớ. Khó thứ hai là với các case Hard như H05: phải đảm bảo expected_answer không tự mâu thuẫn với những đoạn "được bảo hành" khác nằm trong cùng document (`06_warranty_policy.md` liệt kê cả trường hợp connect lỗi với "supported devices" là được bảo hành), nên phải chọn evidence đủ rõ để phân biệt rạch ròi hai tình huống thay vì chỉ trích một câu chung chung.
 
 **Xác nhận:**
 
-- [ ] Mọi claim trong expected answer đều có evidence hỗ trợ.
-- [ ] Không có questions trùng ý và không dùng kiến thức ngoài corpus.
-- [ ] `python validate_golden_dataset.py` báo `PASS`.
+- [x] Mọi claim trong expected answer đều có evidence hỗ trợ.
+- [x] Không có questions trùng ý và không dùng kiến thức ngoài corpus.
+- [x] `python validate_golden_dataset.py` báo `PASS`.
 
 ### Exercise 3.2 — Benchmark Run
 
@@ -333,11 +333,11 @@ Hoàn thành `reflection.md` bằng kết quả thật từ Exercise 3.2.
 
 Hoàn thành kiểm tra cuối trong khoảng 16:50–17:00.
 
-- [ ] Tất cả required tests pass.
-- [ ] `golden_dataset.json` validate thành công.
-- [ ] Exercise 3.1 hoàn thành trong file JSON và bảng kết quả phía trên.
-- [ ] Exercise 3.2 có năm metrics, aggregate report và ba cases thấp nhất.
-- [ ] Exercise 3.3 có rubric 1–5 và bias controls.
-- [ ] `reflection.md` có ba failure analyses và regression strategy.
-- [ ] Đã copy `template.py` thành `solution/solution.py`.
-- [ ] Exercise 3.4 và 3.5 chỉ làm nếu chọn bonus.
+- [x] Tất cả required tests pass.
+- [x] `golden_dataset.json` validate thành công.
+- [x] Exercise 3.1 hoàn thành trong file JSON và bảng kết quả phía trên.
+- [x] Exercise 3.2 có năm metrics, aggregate report và ba cases thấp nhất.
+- [x] Exercise 3.3 có rubric 1–5 và bias controls.
+- [x] `reflection.md` có ba failure analyses và regression strategy.
+- [x] Đã copy `template.py` thành `solution/solution.py`.
+- [ ] Exercise 3.4 và 3.5 chỉ làm nếu chọn bonus. *(không làm bonus lần này)*
