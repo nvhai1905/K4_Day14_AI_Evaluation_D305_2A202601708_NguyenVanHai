@@ -279,19 +279,21 @@ verbosity bias và self-preference bằng cách nào?
 Chỉ làm sau khi hoàn thành 3.1–3.3. Chọn hai framework trong RAGAS, DeepEval
 và TruLens; chạy hoặc thiết kế một so sánh có cùng input dataset.
 
-| Tiêu chí | Framework 1: ____ | Framework 2: ____ |
+> **Ghi chú phương pháp:** Không cài thêm package `ragas`/`deepeval` (ngoài phạm vi `requirements.txt` của bài và không có thêm credit cho việc chạy LLM-judge thật). Đây là so sánh **thiết kế** (design-level), dựa trên định nghĩa metric chính thức của từng framework, áp dụng suy luận lên đúng 20 case thật đã có trong `artifacts/benchmark_results.json` — không phải kết quả đã thực thi.
+
+| Tiêu chí | Framework 1: RAGAS | Framework 2: DeepEval |
 |---|---|---|
-| Setup complexity | | |
-| Metrics available | | |
-| CI/CD integration | | |
-| Kết quả trên cùng dataset | | |
-| Insight rút ra | | |
+| Setup complexity | Cần `pip install ragas`, format dataset thành HuggingFace `Dataset` (cột `question`, `contexts`, `answer`, `ground_truth`) và một LLM API key (dùng làm judge cho Faithfulness/Answer Relevancy). Không có concept "test case" — chấm theo batch cả dataset một lần. | Cần `pip install deepeval`, định nghĩa từng `LLMTestCase(input=..., actual_output=..., retrieval_context=..., expected_output=...)` rồi gọi `assert_test()` trong file test — style rất gần với `tests/test_solution.py` đã có sẵn trong repo này. |
+| Metrics available | `Faithfulness`, `AnswerRelevancy`, `ContextPrecision`, `ContextRecall`, `ContextEntityRecall`, `AnswerSemanticSimilarity` — đây chính xác là 5 metric mà `template.py` mô phỏng lại bằng heuristic (đã ghi rõ trong comment "In production, replace with actual RAGAS framework"). | `GEval` (LLM chấm theo tiêu chí tự định nghĩa, giống LLMJudge ở Task 3), `FaithfulnessMetric`, `AnswerRelevancyMetric`, `ContextualPrecision/Recall/Relevancy`, cộng thêm các metric an toàn: `HallucinationMetric`, `ToxicityMetric`, `BiasMetric` — hữu ích riêng cho case adversarial (A01–A03) mà RAGAS không có sẵn. |
+| CI/CD integration | Không pytest-native — cần viết wrapper script chạy `evaluate()` trên toàn dataset rồi tự so kết quả với threshold, tự set exit code cho CI. | Pytest-native (`deepeval test run`), cắm thẳng vào `tests/` hiện có của repo, mỗi case là 1 test riêng nên CI report ra failure theo từng case thay vì một điểm tổng. |
+| Kết quả trên cùng dataset | Dự đoán: Faithfulness/AnswerRelevancy (LLM-judge) sẽ chấm **A01, H03, M02** ở mức cao (0.8+) vì cả 3 câu trả lời thật sự đúng về ngữ nghĩa — khác hẳn 0.415/0.418/0.443 mà heuristic word-overlap trong `template.py` chấm (xem `reflection.md` mục 7). ContextPrecision/Recall của RAGAS gần như trùng khớp con số hiện có, vì cách định nghĩa (rank-aware AP cho precision, coverage cho recall) giống hệt implementation trong `template.py`. | Dự đoán: `GEval("Correctness")` cũng chấm A01/H03/M02 cao tương tự RAGAS (cùng dùng LLM-judge nên xu hướng gần nhau). Điểm khác biệt: `HallucinationMetric` của DeepEval chấm theo "claim có mâu thuẫn với retrieval_context hay không" (không giới hạn ở gold evidence hẹp) nên nhiều khả năng sẽ **không** gắn nhãn hallucination cho H04 — khác với `find_root_cause()` hiện tại đang gắn nhãn này chỉ vì Faithfulness đo trên gold context hẹp bỏ sót chunk retrieved thật mà model đã dùng đúng. |
+| Insight rút ra | RAGAS xác nhận: heuristic trong `template.py` là proxy hợp lý cho Context Recall/Precision (kiến trúc giống nhau) nhưng là proxy kém cho Faithfulness/Relevancy/Completeness (thiếu hiểu ngữ nghĩa). | DeepEval cho thấy: có sẵn metric an toàn chuyên biệt (Toxicity/Bias/Hallucination định nghĩa rộng hơn) phù hợp hơn cho benchmark có case adversarial như bộ 20 câu này, và tích hợp CI dễ hơn vì đã pytest-native. |
 
-- Scores có nhất quán không?
-- Framework nào strict hơn và vì sao?
-- Hai framework có tìm ra cùng failure cases không?
+- **Scores có nhất quán không?** Dự đoán Context Recall/Precision nhất quán cao giữa RAGAS và implementation hiện tại (cùng công thức). Faithfulness/Relevancy/Completeness sẽ **lệch đáng kể theo hướng cao hơn** ở cả RAGAS và DeepEval so với heuristic — không phải vì hai framework "dễ dãi" hơn, mà vì chúng đo đúng thứ cần đo (ngữ nghĩa) thay vì proxy từ vựng.
+- **Framework nào strict hơn và vì sao?** DeepEval nhiều khả năng strict hơn ở nhóm case adversarial vì có `ToxicityMetric`/`BiasMetric` chuyên biệt sẽ bắt được các vi phạm tinh vi (vd rò rỉ một phần thông tin nội bộ) mà `FaithfulnessMetric`/RAGAS chung chung có thể bỏ qua vì chỉ tập trung vào grounding, không tập trung vào an toàn/quyền riêng tư.
+- **Hai framework có tìm ra cùng failure cases không?** Với case dạng "đúng nhưng paraphrase" (A01, H03, M02, M06, E01, H04, H05 — Cluster 1 trong `reflection.md`), cả hai nhiều khả năng đồng thuận là **không fail** (khác với heuristic hiện tại) vì cùng dùng LLM-judge nên hội tụ về đánh giá ngữ nghĩa tương tự nhau. Case retrieval-thật (H02, Context Recall 0.343) thì cả ba (heuristic, RAGAS, DeepEval) đều sẽ đồng thuận là fail, vì đây là lỗi thật ở tầng retrieval, không phụ thuộc cách đo generation.
 
-> *Phân tích:*
+> *Phân tích:* Kết luận chính: bất kể chọn RAGAS hay DeepEval, việc thay heuristic word-overlap bằng LLM-judge thật sẽ giải quyết đúng root cause đã tìm được ở Cluster 1 (`reflection.md` mục 3) — đây là bằng chứng gián tiếp (từ định nghĩa framework chuẩn ngành) củng cố thêm cho phát hiện thực nghiệm ở Exercise 3.2/3.3, chứ không mâu thuẫn với nó.
 
 ### Exercise 3.5 — Retrieval Reranking (Bonus +5)
 
@@ -304,22 +306,44 @@ thay đổi Context Recall hay không.
 4. Rerank cùng tập chunks, không thêm hoặc xóa chunk.
 5. Tính lại hai metrics và giải thích kết quả.
 
+Đã implement `rerank_by_overlap()` trong `template.py` (dòng ~350-365, đã có
+test `test_reranking_improves_or_keeps_precision` pass). Chạy trên 5 case thật
+lấy từ `artifacts/actual_answers.json`, dùng cùng `retrieved_contexts` (không
+thêm/bớt chunk nào), rerank theo overlap với `expected_answer` — đúng convention
+mà `evaluate_context_precision()` dùng để định nghĩa "chunk relevant".
+
 | ID | Recall before | Recall after | Precision before | Precision after | Delta Precision |
 |---|---:|---:|---:|---:|---:|
-| | | | | | |
-| | | | | | |
-| | | | | | |
-| | | | | | |
-| | | | | | |
-| **Avg** | | | | | |
+| H05 | 0.808 | 0.808 | 0.700 | 1.000 | +0.300 |
+| A02 | 0.889 | 0.889 | 0.756 | 1.000 | +0.244 |
+| H02 | 0.343 | 0.343 | 0.833 | 1.000 | +0.167 |
+| A03 | 0.385 | 0.385 | 0.804 | 1.000 | +0.196 |
+| E01 | 1.000 | 1.000 | 0.888 | 1.000 | +0.113 |
+| **Avg** | **0.685** | **0.685** | **0.796** | **1.000** | **+0.204** |
+
+5 case được chọn cố ý là những case có Context Precision gốc thấp nhất trong
+benchmark thật (0.70–0.89) để thấy rõ tác động của reranking. Ví dụ minh họa
+với H05 — thứ tự 5 chunk retrieved trước/sau rerank:
+
+```text
+Trước: [HomeHub Wi-Fi setup] [warranty covers defects...] [24-month warranty]
+       [PulsePhone X specs] [warranty excludes... third-party]
+Sau:   [HomeHub Wi-Fi setup] [warranty excludes... third-party] [PulsePhone X specs]
+       [24-month warranty] [warranty covers defects...]
+```
+
+Chunk chứa evidence trực tiếp nhất cho câu hỏi ("It also excludes failures
+caused solely by third-party networks, applications, accessories, or
+compatibility changes") được đẩy lên vị trí 2 thay vì nằm cuối — Precision từ
+0.700 lên 1.000, trong khi tập 5 chunk retrieved giữ nguyên 100%.
 
 **Tại sao Recall dự kiến không đổi?**
 
-> *Câu trả lời:*
+> Vì `evaluate_context_recall()` đo trên **union token của toàn bộ chunk trong `contexts`**, không quan tâm thứ tự (`union_tokens |= _tokenize(chunk)` với mọi chunk, bất kể vị trí). Reranking chỉ `sorted(...)` lại list, không thêm/bớt phần tử nào, nên union token không đổi → Recall giữ nguyên tuyệt đối, đúng như bảng trên (mọi ID đều có Recall before = Recall after). Đây chính là điểm khác biệt cốt lõi giữa hai metric: Context Recall đo **coverage** (có đủ evidence trong tập hay không), còn Context Precision đo **ranking quality** (evidence tốt có đứng sớm hay không) — reranking chỉ tác động đến metric thứ hai.
 
 **Khi nào reranking không đủ và cần sửa retriever/query/chunking?**
 
-> *Câu trả lời:*
+> Reranking chỉ sắp xếp lại **tập chunk đã có sẵn** — nếu evidence đúng chưa từng lọt vào top-k ngay từ đầu thì không có gì để rerank lên trên cả. Case rõ nhất trong benchmark thật là **H02** (Context Recall 0.343 — thấp nhất dataset): rerank vẫn nâng Precision lên 1.000 (vì trong 5 chunk retrieved, phần "liên quan nhất" theo overlap với expected vẫn được xếp đầu), nhưng con số đó đánh lừa — 2 chunk evidence quan trọng nhất (quy định về proof-of-purchase thay thế và yêu cầu hồ sơ sửa chữa) chưa bao giờ được retrieve, nên Recall vẫn thấp dù Precision "hoàn hảo". Khi Recall thấp mà đã thử tăng `top_k` không cải thiện, cần sửa **retriever** (đổi BM25 sang kết hợp semantic/embedding search để bắt được các case query dùng từ vựng khác evidence, như "cannot find order confirmation email" vs "proof of purchase"), sửa **query** (query rewriting/expansion trước khi retrieve), hoặc sửa **chunking** (chunk hiện tại theo từng đoạn văn — nếu evidence bị tách rời quá nhiều chunk nhỏ hoặc gộp chung với nội dung không liên quan, có thể cần chunk lại theo ranh giới ngữ nghĩa rõ hơn).
 
 ---
 
@@ -340,4 +364,4 @@ Hoàn thành kiểm tra cuối trong khoảng 16:50–17:00.
 - [x] Exercise 3.3 có rubric 1–5 và bias controls.
 - [x] `reflection.md` có ba failure analyses và regression strategy.
 - [x] Đã copy `template.py` thành `solution/solution.py`.
-- [ ] Exercise 3.4 và 3.5 chỉ làm nếu chọn bonus. *(không làm bonus lần này)*
+- [x] Exercise 3.4 và 3.5 chỉ làm nếu chọn bonus. *(đã làm cả hai: 3.4 so sánh RAGAS/DeepEval, 3.5 reranking trên 5 case thật)*
