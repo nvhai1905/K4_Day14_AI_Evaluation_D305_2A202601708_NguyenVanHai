@@ -30,11 +30,11 @@ critical.
 
 | Metric | Acceptable Low Score Scenario | Critical Low Score Scenario | Action Required |
 |---|---|---|---|
-| Faithfulness | | | |
-| Answer Relevance | | | |
-| Context Recall | | | |
-| Context Precision | | | |
-| Completeness | | | |
+| Faithfulness | Answer diễn đạt lại context bằng từ khác nghĩa giống nhau (vd "seven days" vs "1 week"), khiến heuristic word-overlap bị đếm thiếu dù mọi claim vẫn có căn cứ. | Answer nêu một con số bảo hành, số tiền hoàn trả hoặc deadline không hề xuất hiện trong context đã retrieve — model bịa ra chi tiết policy. | Kiểm tra trace thủ công. Nếu chỉ là lỗi diễn đạt/heuristic thì không cần sửa model, chỉ ghi nhận giới hạn của heuristic. Nếu là bịa thông tin thật sự thì chặn deploy và siết lại grounding/prompt (yêu cầu trích dẫn context). |
+| Answer Relevance | Answer trả lời đúng ý câu hỏi nhưng có thêm ngữ cảnh liên quan (vd nhắc thêm policy gần đó), làm giảm độ trùng từ vựng với câu hỏi dù vẫn hữu ích. | Answer nói về chủ đề gần giống nhưng không giải quyết đúng điều được hỏi (vd hỏi cách hủy đơn nhưng trả lời về trễ giao hàng) — lỗi nhận diện intent. | Nếu retrieval đúng mà relevance vẫn thấp thì generation/prompt đang lệch intent, cần sửa prompt. Nếu retrieval cũng sai thì coi đây là lỗi retrieval trước. |
+| Context Recall | Một chi tiết phụ (vd ví dụ minh họa) nằm trong chunk không được retrieve, nhưng chunk chứa quy định chính vẫn có mặt. | Chunk chứa evidence cốt lõi để trả lời đúng bị thiếu hoàn toàn trong `retrieved_contexts`, dù nó tồn tại trong corpus. | Kiểm tra retriever (query terms, top-k, cách chia chunk) — đây là lỗi retrieval, không phải lỗi generation, sửa prompt sẽ không giải quyết được. |
+| Context Precision | Chunk liên quan vẫn được retrieve nhưng xếp hạng 3–4 trong 5 do trùng từ với tài liệu không liên quan; recall không bị ảnh hưởng, chỉ ranking bị nhiễu. | Phần lớn chunk xếp hạng cao là không liên quan hoặc sai document, còn evidence đúng bị chôn ở cuối top-k hoặc không lọt vào top-k. | Tinh chỉnh ranking của retriever (trọng số BM25, mở rộng query) hoặc thêm bước reranking (xem bonus Exercise 3.5) nếu pattern này lặp lại ở nhiều case. |
+| Completeness | Answer bao quát quy trình/quy định chính nhưng bỏ sót một exception hiếm khi liên quan trực tiếp tới câu hỏi. | Answer bỏ sót một điều kiện, ngoại lệ hoặc số tiền quan trọng làm thay đổi kết quả thực tế của khách hàng (vd thiếu phí restocking hoặc deadline trả hàng). | Nếu Context Recall cao thì đây là lỗi generation — cần chỉnh prompt để buộc model trích xuất đủ mọi điều kiện. Nếu Context Recall thấp thì phải sửa retrieval trước. |
 
 ### Exercise 1.2 — Bias trong LLM-as-a-Judge
 
@@ -46,15 +46,15 @@ Ba bias thường gặp:
 
 **Câu 1: Thiết kế experiment phát hiện position bias với ít nhất hai conditions.**
 
-> *Câu trả lời:*
+> Lấy khoảng 20 cặp câu trả lời (A, B) đã được đánh giá chất lượng ngang nhau bởi một rubric/human độc lập từ trước. Cho judge chấm mỗi cặp hai lần với nội dung giữ nguyên: Condition 1 = trình bày A trước, B sau; Condition 2 = đảo vị trí, B trước A sau. Nếu judge có xu hướng chọn thắng cho bất kể answer nào đứng ở vị trí đầu (tỉ lệ thắng của "vị trí 1" lệch rõ khỏi 50%, ví dụ >65% trên toàn batch), thì có position bias. Cách xử lý thực tế: luôn chấm cả hai thứ tự rồi lấy trung bình điểm của mỗi answer.
 
 **Câu 2: Làm thế nào giảm verbosity bias bằng rubric design?**
 
-> *Câu trả lời:*
+> Rubric phải định nghĩa từng mức điểm dựa trên nội dung cụ thể (đủ điều kiện, ngoại lệ, đúng số tiền/ngày) chứ không dựa trên độ dài hay mức độ chi tiết. Ghi rõ trong rubric: "không cộng điểm cho thông tin thừa không liên quan tới câu hỏi; câu trả lời ngắn nhưng đủ và đúng vẫn được điểm tối đa". Có thể bắt judge liệt kê cụ thể claim nào đúng/sai/thiếu trước khi cho điểm tổng, thay vì cho điểm cảm tính — buộc judge neo vào evidence thay vì độ dài câu trả lời.
 
 **Câu 3: Tại sao cần calibrate LLM judge với human labels?**
 
-> *Câu trả lời:*
+> Vì LLM judge có thể mang bias hệ thống (position, verbosity, self-preference) và không chắc hiểu đúng policy đặc thù của domain (vd quy định hoàn tiền/bảo hành riêng của OrbitTech). Calibration bằng cách lấy một tập nhỏ (20–30 case) cho cả judge và human cùng chấm, rồi đo mức đồng thuận (Cohen's kappa hoặc correlation). Nếu lệch nhiều, phải sửa lại rubric hoặc thêm few-shot example cho judge trước khi tin dùng nó ở quy mô lớn hoặc trong CI/CD.
 
 ### Exercise 1.3 — Evaluation trong CI/CD
 
@@ -62,13 +62,15 @@ Ba bias thường gặp:
 
 | Metric | Threshold | Lý do |
 |---|---:|---|
-| Faithfulness | | |
-| Answer Relevance | | |
-| Completeness | | |
+| Faithfulness | ≥ 0.85 | Hallucination trong customer support (sai giá, sai điều kiện hoàn tiền, sai thời hạn bảo hành) gây rủi ro tin cậy và pháp lý cao nhất, nên threshold phải nghiêm ngặt nhất. |
+| Answer Relevance | ≥ 0.75 | Answer cần đúng trọng tâm câu hỏi, nhưng heuristic word-overlap không hoàn hảo nên để threshold thấp hơn Faithfulness một chút để tránh false block. |
+| Completeness | ≥ 0.70 | Thiếu một điều kiện phụ đôi khi vẫn chấp nhận được, nhưng thiếu nhiều điều kiện sẽ gây khiếu nại; threshold vừa phải vì heuristic completeness khá strict theo overlap với expected answer. |
 
 **Câu 2: Khi nào dùng offline evaluation, online evaluation và human review?**
 
-> *Câu trả lời:*
+> - **Offline:** mỗi khi thay đổi prompt, retriever, chunking hoặc model, trước khi merge/deploy — chạy trên golden dataset cố định để so sánh regression một cách lặp lại được.
+> - **Online:** theo dõi liên tục trên traffic thật sau khi deploy, để phát hiện drift, câu hỏi mới ngoài golden dataset, hoặc vấn đề retrieval chỉ xuất hiện với dữ liệu thực tế.
+> - **Human review:** định kỳ (vd hàng tuần) lấy mẫu một phần câu trả lời thật, đặc biệt các case adversarial hoặc high-stakes (privacy, số tiền hoàn trả lớn), hoặc khi offline/online metrics có tín hiệu bất thường cần xác nhận trước khi hành động.
 
 ---
 
